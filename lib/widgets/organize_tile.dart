@@ -1,19 +1,25 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+/// Minimum fling velocity (px/s) for a gesture on a selected tile to count
+/// as a move swipe rather than an accidental wobble.
+const _swipeVelocityThreshold = 200.0;
 
 /// Wraps a tile's visual content with the shared "organize mode" chrome:
-/// wiggle animation, selection highlight, and drag-to-reorder. Resize and
-/// delete controls for the selected tile live in the edit banner instead of
-/// on the tile itself.
+/// wiggle animation, selection highlight, and (when selected) swipe-to-move
+/// — swipe in a direction to shift the tile one grid cell that way,
+/// swapping with whatever tile is already there. Resize (via the edit
+/// banner's dropdowns) and delete live off the tile itself.
 class OrganizeTile extends StatefulWidget {
   final String id;
   final Widget child;
   final bool organizing;
   final bool selected;
-  final double feedbackWidth;
-  final double feedbackHeight;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
-  final void Function(String draggedId) onDroppedOnto;
+  final void Function(int dRow, int dCol)? onSwipeMove;
 
   const OrganizeTile({
     super.key,
@@ -21,24 +27,24 @@ class OrganizeTile extends StatefulWidget {
     required this.child,
     required this.organizing,
     required this.selected,
-    required this.feedbackWidth,
-    required this.feedbackHeight,
     required this.onTap,
     required this.onLongPress,
-    required this.onDroppedOnto,
+    this.onSwipeMove,
   });
 
   @override
   State<OrganizeTile> createState() => _OrganizeTileState();
 }
 
-class _OrganizeTileState extends State<OrganizeTile> with SingleTickerProviderStateMixin {
+class _OrganizeTileState extends State<OrganizeTile> with TickerProviderStateMixin {
   late final AnimationController _wiggleController;
+  late final AnimationController _bounceController;
 
   @override
   void initState() {
     super.initState();
     _wiggleController = AnimationController(vsync: this, duration: const Duration(milliseconds: 220));
+    _bounceController = AnimationController(vsync: this, duration: const Duration(milliseconds: 160));
     _syncWiggle();
   }
 
@@ -61,7 +67,19 @@ class _OrganizeTileState extends State<OrganizeTile> with SingleTickerProviderSt
   @override
   void dispose() {
     _wiggleController.dispose();
+    _bounceController.dispose();
     super.dispose();
+  }
+
+  void _handleSwipe(DragEndDetails details) {
+    final velocity = details.velocity.pixelsPerSecond;
+    if (velocity.distance < _swipeVelocityThreshold) return;
+    final isHorizontal = velocity.dx.abs() > velocity.dy.abs();
+    final dRow = isHorizontal ? 0 : (velocity.dy > 0 ? 1 : -1);
+    final dCol = isHorizontal ? (velocity.dx > 0 ? 1 : -1) : 0;
+    widget.onSwipeMove?.call(dRow, dCol);
+    HapticFeedback.selectionClick();
+    _bounceController.forward(from: 0);
   }
 
   @override
@@ -81,33 +99,21 @@ class _OrganizeTileState extends State<OrganizeTile> with SingleTickerProviderSt
       return GestureDetector(onTap: widget.onTap, onLongPress: widget.onLongPress, child: content);
     }
 
-    return DragTarget<String>(
-      onWillAcceptWithDetails: (details) => details.data != widget.id,
-      onAcceptWithDetails: (details) => widget.onDroppedOnto(details.data),
-      builder: (context, candidateData, rejectedData) {
-        return LongPressDraggable<String>(
-          data: widget.id,
-          feedback: Material(
-            color: Colors.transparent,
-            child: Opacity(
-              opacity: 0.9,
-              child: SizedBox(
-                width: widget.feedbackWidth,
-                height: widget.feedbackHeight,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: const [BoxShadow(color: Color(0x552D1B4E), blurRadius: 16, offset: Offset(0, 6))],
-                  ),
-                  child: _decoratedTile(),
-                ),
-              ),
-            ),
-          ),
-          childWhenDragging: Opacity(opacity: 0.35, child: content),
-          child: GestureDetector(onTap: widget.onTap, child: content),
-        );
-      },
+    if (!widget.selected) {
+      return GestureDetector(onTap: widget.onTap, child: content);
+    }
+
+    return GestureDetector(
+      onTap: widget.onTap,
+      onPanEnd: _handleSwipe,
+      child: AnimatedBuilder(
+        animation: _bounceController,
+        builder: (context, child) {
+          final scale = 1 + 0.08 * math.sin(math.pi * _bounceController.value);
+          return Transform.scale(scale: scale, child: child);
+        },
+        child: content,
+      ),
     );
   }
 

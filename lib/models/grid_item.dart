@@ -10,6 +10,10 @@ sealed class GridItem {
   set colSpan(int value);
   int get rowSpan;
   set rowSpan(int value);
+  int get row;
+  set row(int value);
+  int get col;
+  set col(int value);
 }
 
 class AppGridItem implements GridItem {
@@ -30,6 +34,14 @@ class AppGridItem implements GridItem {
   int get rowSpan => app.rowSpan;
   @override
   set rowSpan(int value) => app.rowSpan = value;
+  @override
+  int get row => app.row;
+  @override
+  set row(int value) => app.row = value;
+  @override
+  int get col => app.col;
+  @override
+  set col(int value) => app.col = value;
 }
 
 class StickerGridItem implements GridItem {
@@ -50,4 +62,12 @@ class StickerGridItem implements GridItem {
   int get rowSpan => sticker.rowSpan;
   @override
   set rowSpan(int value) => sticker.rowSpan = value;
+  @override
+  int get row => sticker.row;
+  @override
+  set row(int value) => sticker.row = value;
+  @override
+  int get col => sticker.col;
+  @override
+  set col(int value) => sticker.col = value;
 }

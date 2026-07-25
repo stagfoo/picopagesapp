@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:hive/hive.dart';
@@ -6,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../models/app_entry.dart';
 import '../models/grid_item.dart';
 import '../models/sticker_entry.dart';
+import 'grid_placement.dart';
 import 'storage_root.dart';
 
 /// Owns the registry of imported apps/stickers and their on-disk folders.
@@ -53,13 +55,28 @@ class AppRepository {
     return _stickersBox.values.map((v) => StickerEntry.fromMap(v as Map)).toList();
   }
 
-  /// Apps and stickers combined, sorted by their shared manual grid order.
+  /// Apps and stickers combined, sorted by grid position. Any item that has
+  /// never had a real (row, col) — newly created, or left over from before
+  /// grid positions existed — gets one assigned here (first-fit, in
+  /// creation order) and persisted so this only happens once per item.
   List<GridItem> listGridItems() {
     final items = <GridItem>[
       ...listApps().map(AppGridItem.new),
       ...listStickers().map(StickerGridItem.new),
     ];
-    items.sort((a, b) => a.order.compareTo(b.order));
+    final newlyPlaced = const GridPlacement().assignMissingPositions(items);
+    for (final item in newlyPlaced) {
+      switch (item) {
+        case AppGridItem(:final app):
+          unawaited(updateApp(app));
+        case StickerGridItem(:final sticker):
+          unawaited(updateSticker(sticker));
+      }
+    }
+    items.sort((a, b) {
+      final rowCompare = a.row.compareTo(b.row);
+      return rowCompare != 0 ? rowCompare : a.col.compareTo(b.col);
+    });
     return items;
   }
 
@@ -130,20 +147,6 @@ class AppRepository {
     if (entry.imagePath != null) {
       final file = File(entry.imagePath!);
       if (await file.exists()) await file.delete();
-    }
-  }
-
-  /// Persists a full re-ordering of the grid (apps and stickers together).
-  Future<void> reorderItems(List<GridItem> newOrder) async {
-    for (var i = 0; i < newOrder.length; i++) {
-      final item = newOrder[i];
-      item.order = i;
-      switch (item) {
-        case AppGridItem(:final app):
-          await updateApp(app);
-        case StickerGridItem(:final sticker):
-          await updateSticker(sticker);
-      }
     }
   }
 }

@@ -8,6 +8,12 @@ class AppEntry {
   int order;
   int colSpan;
   int rowSpan;
+  /// Grid position. -1 means "not yet placed" — the repository assigns a
+  /// real position (first-fit) the first time it loads an item like this,
+  /// which only happens once per item (on migration from the old
+  /// order-based flow layout, or right after creation).
+  int row;
+  int col;
   /// ARGB32 value of a user-picked background color (supports transparency).
   /// Null means use the automatic hashed palette color.
   int? backgroundColor;
@@ -22,6 +28,8 @@ class AppEntry {
     this.iconImagePath,
     this.colSpan = 1,
     this.rowSpan = 1,
+    this.row = -1,
+    this.col = -1,
     this.backgroundColor,
   });
 
@@ -35,6 +43,8 @@ class AppEntry {
         'order': order,
         'colSpan': colSpan,
         'rowSpan': rowSpan,
+        'row': row,
+        'col': col,
         'backgroundColor': backgroundColor,
       };
 
@@ -48,6 +58,8 @@ class AppEntry {
         iconImagePath: map['iconImagePath'] as String?,
         colSpan: map['colSpan'] as int? ?? 1,
         rowSpan: map['rowSpan'] as int? ?? 1,
+        row: map['row'] as int? ?? -1,
+        col: map['col'] as int? ?? -1,
         backgroundColor: map['backgroundColor'] as int?,
       );
 }

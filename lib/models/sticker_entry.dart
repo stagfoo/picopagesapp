@@ -7,6 +7,9 @@ class StickerEntry {
   String? imagePath;
   int colSpan;
   int rowSpan;
+  /// Grid position. -1 means "not yet placed" — see [AppEntry.row].
+  int row;
+  int col;
 
   StickerEntry({
     required this.id,
@@ -15,6 +18,8 @@ class StickerEntry {
     this.imagePath,
     this.colSpan = 1,
     this.rowSpan = 1,
+    this.row = -1,
+    this.col = -1,
   });
 
   Map<String, dynamic> toMap() => {
@@ -24,6 +29,8 @@ class StickerEntry {
         'imagePath': imagePath,
         'colSpan': colSpan,
         'rowSpan': rowSpan,
+        'row': row,
+        'col': col,
       };
 
   factory StickerEntry.fromMap(Map<dynamic, dynamic> map) => StickerEntry(
@@ -33,5 +40,7 @@ class StickerEntry {
         imagePath: map['imagePath'] as String?,
         colSpan: map['colSpan'] as int? ?? 1,
         rowSpan: map['rowSpan'] as int? ?? 1,
+        row: map['row'] as int? ?? -1,
+        col: map['col'] as int? ?? -1,
       );
 }

@@ -1,10 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
-import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
 import '../models/app_entry.dart';
 import '../models/grid_item.dart';
 import '../models/sticker_entry.dart';
 import '../services/app_repository.dart';
+import '../services/grid_placement.dart';
 import '../services/import_service.dart';
 import '../widgets/app_tile.dart';
 import '../widgets/color_picker_sheet.dart';
@@ -144,16 +146,18 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {});
   }
 
-  Future<void> _onDropped(String draggedId, String ontoId) async {
-    if (draggedId == ontoId) return;
-    final fromIndex = _items.indexWhere((i) => i.id == draggedId);
-    final toIndex = _items.indexWhere((i) => i.id == ontoId);
-    if (fromIndex == -1 || toIndex == -1) return;
-    setState(() {
-      final moved = _items.removeAt(fromIndex);
-      _items.insert(toIndex, moved);
-    });
-    await widget.repository.reorderItems(_items);
+  Future<void> _onSwipeMove(GridItem item, int dRow, int dCol) async {
+    final moved = const GridPlacement().moveByDelta(_items, item, dRow, dCol);
+    if (moved.isEmpty) return;
+    setState(() {});
+    for (final changed in moved) {
+      switch (changed) {
+        case AppGridItem(:final app):
+          await widget.repository.updateApp(app);
+        case StickerGridItem(:final sticker):
+          await widget.repository.updateSticker(sticker);
+      }
+    }
   }
 
   Future<void> _renameApp(AppEntry entry) async {
@@ -258,21 +262,17 @@ class _HomeScreenState extends State<HomeScreen> {
     _refresh();
   }
 
-  Widget _buildTile(GridItem item, double cellExtent) {
+  Widget _buildTile(GridItem item) {
     final selected = _selectedId == item.id;
-    final feedbackWidth = item.colSpan * cellExtent + (item.colSpan - 1) * _crossAxisSpacing;
-    final feedbackHeight = item.rowSpan * cellExtent + (item.rowSpan - 1) * _mainAxisSpacing;
     return switch (item) {
       AppGridItem(:final app) => OrganizeTile(
           key: ValueKey(item.id),
           id: item.id,
           organizing: _organizing,
           selected: selected,
-          feedbackWidth: feedbackWidth,
-          feedbackHeight: feedbackHeight,
           onTap: () => _onTileTap(item, app: app),
           onLongPress: () => _onTileLongPress(item.id),
-          onDroppedOnto: (draggedId) => _onDropped(draggedId, item.id),
+          onSwipeMove: (dRow, dCol) => _onSwipeMove(item, dRow, dCol),
           child: AppTileContent(entry: app),
         ),
       StickerGridItem(:final sticker) => OrganizeTile(
@@ -280,11 +280,9 @@ class _HomeScreenState extends State<HomeScreen> {
           id: item.id,
           organizing: _organizing,
           selected: selected,
-          feedbackWidth: feedbackWidth,
-          feedbackHeight: feedbackHeight,
           onTap: () => _onTileTap(item),
           onLongPress: () => _onTileLongPress(item.id),
-          onDroppedOnto: (draggedId) => _onDropped(draggedId, item.id),
+          onSwipeMove: (dRow, dCol) => _onSwipeMove(item, dRow, dCol),
           child: StickerTileContent(sticker: sticker),
         ),
     };
@@ -336,7 +334,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildNormalTitlePill({Key? key}) {
     final hint = _organizing
-        ? 'Tap a tile to resize it, drag to reorder'
+        ? 'Tap a tile to select it, swipe to move'
         : 'Long-press a tile to organize';
     return Container(
       key: key,
@@ -479,35 +477,46 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context, constraints) {
           final cellExtent =
               (constraints.maxWidth - (_crossAxisCount - 1) * _crossAxisSpacing) / _crossAxisCount;
-          return Stack(
-            children: [
-              if (_organizing)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: CustomPaint(
-                      painter: _OrganizeGridPainter(
-                        crossAxisCount: _crossAxisCount,
-                        cellExtent: cellExtent,
-                        crossAxisSpacing: _crossAxisSpacing,
-                        mainAxisSpacing: _mainAxisSpacing,
+          final rowStep = cellExtent + _mainAxisSpacing;
+          final colStep = cellExtent + _crossAxisSpacing;
+
+          final maxRow = _items.map((i) => i.row + i.rowSpan).fold(0, math.max);
+          final contentHeight = maxRow * rowStep - _mainAxisSpacing;
+          final gridHeight = math.max(contentHeight, constraints.maxHeight);
+
+          return SingleChildScrollView(
+            child: SizedBox(
+              width: constraints.maxWidth,
+              height: gridHeight,
+              child: Stack(
+                children: [
+                  if (_organizing)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          painter: _OrganizeGridPainter(
+                            crossAxisCount: _crossAxisCount,
+                            cellExtent: cellExtent,
+                            crossAxisSpacing: _crossAxisSpacing,
+                            mainAxisSpacing: _mainAxisSpacing,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              StaggeredGrid.count(
-                crossAxisCount: _crossAxisCount,
-                mainAxisSpacing: _mainAxisSpacing,
-                crossAxisSpacing: _crossAxisSpacing,
-                children: [
                   for (final item in _items)
-                    StaggeredGridTile.count(
-                      crossAxisCellCount: item.colSpan,
-                      mainAxisCellCount: item.rowSpan,
-                      child: _buildTile(item, cellExtent),
+                    AnimatedPositioned(
+                      key: ValueKey(item.id),
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOut,
+                      left: item.col * colStep,
+                      top: item.row * rowStep,
+                      width: item.colSpan * cellExtent + (item.colSpan - 1) * _crossAxisSpacing,
+                      height: item.rowSpan * cellExtent + (item.rowSpan - 1) * _mainAxisSpacing,
+                      child: _buildTile(item),
                     ),
                 ],
               ),
-            ],
+            ),
           );
         },
       ),
