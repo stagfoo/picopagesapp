@@ -65,10 +65,19 @@ class GridPlacement {
   }
 
   /// Moves [item] by one cell in the given direction. If the destination is
-  /// occupied by exactly one other item, they swap positions. If it's
-  /// occupied by more than one item, or the destination would run off the
-  /// grid horizontally, the move is blocked (returns false, nothing
-  /// mutated). There's no vertical limit — moving down always succeeds.
+  /// occupied by exactly one other item, they swap — but only if the
+  /// blocking item's span fits within [item]'s old footprint (anchored at
+  /// the same top-left corner). That's the exact safety condition: [item]'s
+  /// old spot is guaranteed free of anything else, so anything no bigger
+  /// than it fits there without touching a third tile. A same-size swap
+  /// always qualifies; a *smaller* tile swapping into a *larger* tile's
+  /// spot also works (it just doesn't fill all of it). The other direction
+  /// — a small tile trying to displace a larger one — doesn't fit and is
+  /// blocked, since the larger tile would spill outside the small tile's
+  /// one-cell footprint and overlap whatever's next to it. Also blocked:
+  /// more than one tile in the way, or the destination running off the
+  /// grid horizontally. There's no vertical limit — moving down always
+  /// succeeds.
   ///
   /// Returns the set of items that were mutated (empty if blocked).
   List<GridItem> moveByDelta(List<GridItem> items, GridItem item, int dRow, int dCol) {
@@ -92,6 +101,9 @@ class GridPlacement {
 
     if (blocking.length == 1) {
       final swapWith = blocking.first;
+      final fitsInVacatedSpot = swapWith.colSpan <= item.colSpan && swapWith.rowSpan <= item.rowSpan;
+      if (!fitsInVacatedSpot) return const [];
+
       final oldRow = item.row;
       final oldCol = item.col;
       item.row = newRow;

@@ -82,6 +82,33 @@ void main() {
       expect((b.row, b.col), (0, 0));
     });
 
+    test('a large tile can safely displace a same-position small tile', () {
+      final placement = const GridPlacement(crossAxisCount: 4);
+      final wide = _item('wide', row: 0, col: 0, colSpan: 2);
+      final small = _item('small', row: 0, col: 1);
+      final items = [wide, small];
+
+      final moved = placement.moveByDelta(items, wide, 0, 1);
+
+      expect(moved.toSet(), {wide, small});
+      expect((wide.row, wide.col), (0, 1));
+      expect((small.row, small.col), (0, 0));
+    });
+
+    test('is blocked when a small tile would displace a differently-sized tile', () {
+      final placement = const GridPlacement(crossAxisCount: 4);
+      // wide occupies (0,1) and (0,2); small tries to swipe right into (0,1).
+      final wide = _item('wide', row: 0, col: 1, colSpan: 2);
+      final small = _item('small', row: 0, col: 0);
+      final items = [wide, small];
+
+      final moved = placement.moveByDelta(items, small, 0, 1);
+
+      expect(moved, isEmpty);
+      expect((small.row, small.col), (0, 0));
+      expect((wide.row, wide.col), (0, 1));
+    });
+
     test('is blocked moving left past column 0', () {
       final placement = const GridPlacement(crossAxisCount: 4);
       final a = _item('a', row: 0, col: 0);
