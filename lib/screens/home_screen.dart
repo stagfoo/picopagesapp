@@ -28,6 +28,10 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  static const _crossAxisCount = 4;
+  static const _mainAxisSpacing = 14.0;
+  static const _crossAxisSpacing = 12.0;
+
   late List<GridItem> _items;
   late ImportService _importService;
   bool _importing = false;
@@ -254,14 +258,18 @@ class _HomeScreenState extends State<HomeScreen> {
     _refresh();
   }
 
-  Widget _buildTile(GridItem item) {
+  Widget _buildTile(GridItem item, double cellExtent) {
     final selected = _selectedId == item.id;
+    final feedbackWidth = item.colSpan * cellExtent + (item.colSpan - 1) * _crossAxisSpacing;
+    final feedbackHeight = item.rowSpan * cellExtent + (item.rowSpan - 1) * _mainAxisSpacing;
     return switch (item) {
       AppGridItem(:final app) => OrganizeTile(
           key: ValueKey(item.id),
           id: item.id,
           organizing: _organizing,
           selected: selected,
+          feedbackWidth: feedbackWidth,
+          feedbackHeight: feedbackHeight,
           onTap: () => _onTileTap(item, app: app),
           onLongPress: () => _onTileLongPress(item.id),
           onDroppedOnto: (draggedId) => _onDropped(draggedId, item.id),
@@ -272,6 +280,8 @@ class _HomeScreenState extends State<HomeScreen> {
           id: item.id,
           organizing: _organizing,
           selected: selected,
+          feedbackWidth: feedbackWidth,
+          feedbackHeight: feedbackHeight,
           onTap: () => _onTileTap(item),
           onLongPress: () => _onTileLongPress(item.id),
           onDroppedOnto: (draggedId) => _onDropped(draggedId, item.id),
@@ -465,18 +475,41 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-      child: StaggeredGrid.count(
-        crossAxisCount: 4,
-        mainAxisSpacing: 14,
-        crossAxisSpacing: 12,
-        children: [
-          for (final item in _items)
-            StaggeredGridTile.count(
-              crossAxisCellCount: item.colSpan,
-              mainAxisCellCount: item.rowSpan,
-              child: _buildTile(item),
-            ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final cellExtent =
+              (constraints.maxWidth - (_crossAxisCount - 1) * _crossAxisSpacing) / _crossAxisCount;
+          return Stack(
+            children: [
+              if (_organizing)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: _OrganizeGridPainter(
+                        crossAxisCount: _crossAxisCount,
+                        cellExtent: cellExtent,
+                        crossAxisSpacing: _crossAxisSpacing,
+                        mainAxisSpacing: _mainAxisSpacing,
+                      ),
+                    ),
+                  ),
+                ),
+              StaggeredGrid.count(
+                crossAxisCount: _crossAxisCount,
+                mainAxisSpacing: _mainAxisSpacing,
+                crossAxisSpacing: _crossAxisSpacing,
+                children: [
+                  for (final item in _items)
+                    StaggeredGridTile.count(
+                      crossAxisCellCount: item.colSpan,
+                      mainAxisCellCount: item.rowSpan,
+                      child: _buildTile(item, cellExtent),
+                    ),
+                ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -592,5 +625,53 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+}
+
+/// Faint rounded-cell grid drawn behind the tiles while organizing, so it's
+/// clear where each column/row lands as you drag a tile around.
+class _OrganizeGridPainter extends CustomPainter {
+  final int crossAxisCount;
+  final double cellExtent;
+  final double crossAxisSpacing;
+  final double mainAxisSpacing;
+
+  _OrganizeGridPainter({
+    required this.crossAxisCount,
+    required this.cellExtent,
+    required this.crossAxisSpacing,
+    required this.mainAxisSpacing,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (cellExtent <= 0) return;
+    final paint = Paint()
+      ..color = const Color(0xFF8E6FE0).withValues(alpha: 0.28)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4;
+    const radius = Radius.circular(14);
+
+    final rowStep = cellExtent + mainAxisSpacing;
+    final colStarts = [
+      for (var i = 0; i < crossAxisCount; i++) i * (cellExtent + crossAxisSpacing),
+    ];
+
+    var y = 0.0;
+    while (y < size.height) {
+      for (final x in colStarts) {
+        final rect = Rect.fromLTWH(x, y, cellExtent, cellExtent);
+        canvas.drawRRect(RRect.fromRectAndRadius(rect, radius), paint);
+      }
+      y += rowStep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _OrganizeGridPainter oldDelegate) {
+    return oldDelegate.crossAxisCount != crossAxisCount ||
+        oldDelegate.cellExtent != cellExtent ||
+        oldDelegate.crossAxisSpacing != crossAxisSpacing ||
+        oldDelegate.mainAxisSpacing != mainAxisSpacing;
   }
 }

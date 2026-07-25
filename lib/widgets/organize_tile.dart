@@ -9,6 +9,8 @@ class OrganizeTile extends StatefulWidget {
   final Widget child;
   final bool organizing;
   final bool selected;
+  final double feedbackWidth;
+  final double feedbackHeight;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final void Function(String draggedId) onDroppedOnto;
@@ -19,6 +21,8 @@ class OrganizeTile extends StatefulWidget {
     required this.child,
     required this.organizing,
     required this.selected,
+    required this.feedbackWidth,
+    required this.feedbackHeight,
     required this.onTap,
     required this.onLongPress,
     required this.onDroppedOnto,
@@ -83,7 +87,23 @@ class _OrganizeTileState extends State<OrganizeTile> with SingleTickerProviderSt
       builder: (context, candidateData, rejectedData) {
         return LongPressDraggable<String>(
           data: widget.id,
-          feedback: Opacity(opacity: 0.85, child: SizedBox(width: 90, height: 90, child: _decoratedTile())),
+          feedback: Material(
+            color: Colors.transparent,
+            child: Opacity(
+              opacity: 0.9,
+              child: SizedBox(
+                width: widget.feedbackWidth,
+                height: widget.feedbackHeight,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: const [BoxShadow(color: Color(0x552D1B4E), blurRadius: 16, offset: Offset(0, 6))],
+                  ),
+                  child: _decoratedTile(),
+                ),
+              ),
+            ),
+          ),
           childWhenDragging: Opacity(opacity: 0.35, child: content),
           child: GestureDetector(onTap: widget.onTap, child: content),
         );

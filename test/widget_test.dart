@@ -26,6 +26,8 @@ void main() {
             id: entry.id,
             organizing: false,
             selected: false,
+            feedbackWidth: 200,
+            feedbackHeight: 200,
             onTap: () => tapped = true,
             onLongPress: () {},
             onDroppedOnto: (_) {},
