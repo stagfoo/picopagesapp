@@ -38,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _updatingFiles = false;
   bool _organizing = false;
   String? _selectedId;
+  bool _hasShownResizeHint = false;
 
   @override
   void initState() {
@@ -110,7 +111,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onTileTap(GridItem item, {AppEntry? app}) {
     if (_organizing) {
-      setState(() => _selectedId = _selectedId == item.id ? null : item.id);
+      final willSelect = _selectedId != item.id;
+      setState(() => _selectedId = willSelect ? item.id : null);
+      if (willSelect) _maybeShowResizeHint();
     } else if (app != null) {
       _openApp(app);
     }
@@ -122,15 +125,29 @@ class _HomeScreenState extends State<HomeScreen> {
       _organizing = true;
       _selectedId = id;
     });
+    _maybeShowResizeHint();
   }
 
-  Future<void> _setColSpan(GridItem item, int value) async {
-    item.colSpan = value;
+  void _maybeShowResizeHint() {
+    if (_hasShownResizeHint) return;
+    _hasShownResizeHint = true;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Swipe the tile left/right to change columns, up/down to change rows'),
+      duration: Duration(seconds: 4),
+    ));
+  }
+
+  Future<void> _adjustColSpan(GridItem item, int delta) async {
+    final next = (item.colSpan + delta).clamp(1, _crossAxisCount);
+    if (next == item.colSpan) return;
+    item.colSpan = next;
     await _persist(item);
   }
 
-  Future<void> _setRowSpan(GridItem item, int value) async {
-    item.rowSpan = value;
+  Future<void> _adjustRowSpan(GridItem item, int delta) async {
+    final next = (item.rowSpan + delta).clamp(1, 4);
+    if (next == item.rowSpan) return;
+    item.rowSpan = next;
     await _persist(item);
   }
 
@@ -273,6 +290,8 @@ class _HomeScreenState extends State<HomeScreen> {
           onTap: () => _onTileTap(item, app: app),
           onLongPress: () => _onTileLongPress(item.id),
           onDroppedOnto: (draggedId) => _onDropped(draggedId, item.id),
+          onColSpanSwipe: (delta) => _adjustColSpan(item, delta),
+          onRowSpanSwipe: (delta) => _adjustRowSpan(item, delta),
           child: AppTileContent(entry: app),
         ),
       StickerGridItem(:final sticker) => OrganizeTile(
@@ -285,6 +304,8 @@ class _HomeScreenState extends State<HomeScreen> {
           onTap: () => _onTileTap(item),
           onLongPress: () => _onTileLongPress(item.id),
           onDroppedOnto: (draggedId) => _onDropped(draggedId, item.id),
+          onColSpanSwipe: (delta) => _adjustColSpan(item, delta),
+          onRowSpanSwipe: (delta) => _adjustRowSpan(item, delta),
           child: StickerTileContent(sticker: sticker),
         ),
     };
@@ -336,7 +357,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildNormalTitlePill({Key? key}) {
     final hint = _organizing
-        ? 'Tap a tile to resize it, drag to reorder'
+        ? 'Tap a tile to select it, swipe to resize, drag to reorder'
         : 'Long-press a tile to organize';
     return Container(
       key: key,
@@ -410,9 +431,12 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             children: [
               const SizedBox(width: 4),
-              _dimDropdown('Columns', item.colSpan, (v) => _setColSpan(item, v)),
-              const SizedBox(width: 16),
-              _dimDropdown('Rows', item.rowSpan, (v) => _setRowSpan(item, v)),
+              Icon(Icons.swipe_outlined, size: 14, color: const Color(0xFF8A879B)),
+              const SizedBox(width: 4),
+              Text(
+                'Swipe to resize · ${item.colSpan} col${item.colSpan == 1 ? '' : 's'} × ${item.rowSpan} row${item.rowSpan == 1 ? '' : 's'}',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF8A879B)),
+              ),
               if (app != null) ...[
                 const Spacer(),
                 TextButton.icon(
@@ -433,27 +457,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _dimDropdown(String label, int value, ValueChanged<int> onChanged) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF8A879B))),
-        const SizedBox(width: 6),
-        DropdownButton<int>(
-          value: value,
-          dropdownColor: Colors.white,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF3F3A52)),
-          underline: const SizedBox(),
-          isDense: true,
-          items: const [1, 2, 3, 4].map((n) => DropdownMenuItem(value: n, child: Text('$n'))).toList(),
-          onChanged: (v) {
-            if (v != null) onChanged(v);
-          },
-        ),
-      ],
     );
   }
 
