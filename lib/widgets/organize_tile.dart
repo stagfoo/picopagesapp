@@ -1,16 +1,9 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-
-/// Minimum fling velocity (px/s) for a gesture on a selected tile to count
-/// as a resize swipe rather than an accidental wobble.
-const _swipeVelocityThreshold = 200.0;
 
 /// Wraps a tile's visual content with the shared "organize mode" chrome:
-/// wiggle animation, selection highlight, drag-to-reorder, and (when
-/// selected) swipe-to-resize — swipe left/right to change column span,
-/// up/down to change row span, one step per swipe.
+/// wiggle animation, selection highlight, and drag-to-reorder. Resize and
+/// delete controls for the selected tile live in the edit banner instead of
+/// on the tile itself.
 class OrganizeTile extends StatefulWidget {
   final String id;
   final Widget child;
@@ -21,8 +14,6 @@ class OrganizeTile extends StatefulWidget {
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final void Function(String draggedId) onDroppedOnto;
-  final ValueChanged<int>? onColSpanSwipe;
-  final ValueChanged<int>? onRowSpanSwipe;
 
   const OrganizeTile({
     super.key,
@@ -35,28 +26,19 @@ class OrganizeTile extends StatefulWidget {
     required this.onTap,
     required this.onLongPress,
     required this.onDroppedOnto,
-    this.onColSpanSwipe,
-    this.onRowSpanSwipe,
   });
 
   @override
   State<OrganizeTile> createState() => _OrganizeTileState();
 }
 
-class _OrganizeTileState extends State<OrganizeTile> with TickerProviderStateMixin {
+class _OrganizeTileState extends State<OrganizeTile> with SingleTickerProviderStateMixin {
   late final AnimationController _wiggleController;
-  late final AnimationController _bounceController;
 
   @override
   void initState() {
     super.initState();
     _wiggleController = AnimationController(vsync: this, duration: const Duration(milliseconds: 220));
-    _bounceController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 160),
-      lowerBound: 0.0,
-      upperBound: 1.0,
-    );
     _syncWiggle();
   }
 
@@ -79,21 +61,7 @@ class _OrganizeTileState extends State<OrganizeTile> with TickerProviderStateMix
   @override
   void dispose() {
     _wiggleController.dispose();
-    _bounceController.dispose();
     super.dispose();
-  }
-
-  void _handleSwipe(DragEndDetails details) {
-    final velocity = details.velocity.pixelsPerSecond;
-    if (velocity.distance < _swipeVelocityThreshold) return;
-    final isHorizontal = velocity.dx.abs() > velocity.dy.abs();
-    if (isHorizontal) {
-      widget.onColSpanSwipe?.call(velocity.dx > 0 ? 1 : -1);
-    } else {
-      widget.onRowSpanSwipe?.call(velocity.dy > 0 ? 1 : -1);
-    }
-    HapticFeedback.selectionClick();
-    _bounceController.forward(from: 0);
   }
 
   @override
@@ -111,23 +79,6 @@ class _OrganizeTileState extends State<OrganizeTile> with TickerProviderStateMix
 
     if (!widget.organizing) {
       return GestureDetector(onTap: widget.onTap, onLongPress: widget.onLongPress, child: content);
-    }
-
-    if (widget.selected) {
-      // Selected tiles resize via swipe instead of reordering — deselect to
-      // go back to long-press-drag reordering.
-      return GestureDetector(
-        onTap: widget.onTap,
-        onPanEnd: _handleSwipe,
-        child: AnimatedBuilder(
-          animation: _bounceController,
-          builder: (context, child) {
-            final scale = 1 + 0.08 * math.sin(math.pi * _bounceController.value);
-            return Transform.scale(scale: scale, child: child);
-          },
-          child: content,
-        ),
-      );
     }
 
     return DragTarget<String>(
