@@ -127,13 +127,27 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _setColSpan(GridItem item, int value) async {
+    if (!const GridPlacement().canResize(_items, item, value, item.rowSpan)) {
+      _showResizeBlockedHint();
+      return;
+    }
     item.colSpan = value;
     await _persist(item);
   }
 
   Future<void> _setRowSpan(GridItem item, int value) async {
+    if (!const GridPlacement().canResize(_items, item, item.colSpan, value)) {
+      _showResizeBlockedHint();
+      return;
+    }
     item.rowSpan = value;
     await _persist(item);
+  }
+
+  void _showResizeBlockedHint() {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Not enough room — move the tile(s) in the way first'),
+    ));
   }
 
   Future<void> _persist(GridItem item) async {

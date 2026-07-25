@@ -155,4 +155,40 @@ void main() {
       expect((wide.row, wide.col), (0, 0));
     });
   });
+
+  group('canResize', () {
+    test('allows growing into empty space', () {
+      final placement = const GridPlacement(crossAxisCount: 4);
+      final item = _item('a', row: 0, col: 0);
+      final items = [item];
+
+      expect(placement.canResize(items, item, 2, 2), isTrue);
+    });
+
+    test('blocks growing into a neighboring tile', () {
+      final placement = const GridPlacement(crossAxisCount: 4);
+      final item = _item('a', row: 0, col: 0);
+      final neighbor = _item('b', row: 0, col: 1);
+      final items = [item, neighbor];
+
+      // Growing to colSpan 2 would reach into neighbor's cell (0, 1).
+      expect(placement.canResize(items, item, 2, 1), isFalse);
+    });
+
+    test('blocks growing past the right edge of the grid', () {
+      final placement = const GridPlacement(crossAxisCount: 4);
+      final item = _item('a', row: 0, col: 3);
+      final items = [item];
+
+      expect(placement.canResize(items, item, 2, 1), isFalse);
+    });
+
+    test('always allows shrinking', () {
+      final placement = const GridPlacement(crossAxisCount: 4);
+      final item = _item('a', row: 0, col: 0, colSpan: 4, rowSpan: 4);
+      final items = [item];
+
+      expect(placement.canResize(items, item, 1, 1), isTrue);
+    });
+  });
 }

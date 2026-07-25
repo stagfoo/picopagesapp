@@ -30,6 +30,22 @@ class GridPlacement {
     return cellsFor(row, col, colSpan, rowSpan).every((cell) => !occupied.contains(cell));
   }
 
+  /// Whether [item] could be resized to [newColSpan] x [newRowSpan] at its
+  /// current position without overlapping another tile or running off the
+  /// grid horizontally. Doesn't mutate anything — shrinking always passes,
+  /// since a smaller footprint is a subset of the current (already valid)
+  /// one; growing can fail if it would run into a neighboring tile.
+  bool canResize(List<GridItem> items, GridItem item, int newColSpan, int newRowSpan) {
+    if (item.col + newColSpan > crossAxisCount) return false;
+    final newFootprint = cellsFor(item.row, item.col, newColSpan, newRowSpan);
+    for (final other in items) {
+      if (other.id == item.id) continue;
+      final otherCells = cellsFor(other.row, other.col, other.colSpan, other.rowSpan);
+      if (newFootprint.any(otherCells.contains)) return false;
+    }
+    return true;
+  }
+
   /// Assigns a real (row, col) to any item whose position is the "unplaced"
   /// sentinel (row < 0), first-fit scanning in [order] order, without
   /// disturbing items that already have a real position. Mutates items in
