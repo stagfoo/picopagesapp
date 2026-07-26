@@ -25,9 +25,28 @@ This app will run inside a sandboxed local web server on a phone (no internet, n
 4. Delete an uploaded file:
    DELETE /uploads/<name>
 
+5. Import a whole folder of images as a named set (opens Android's real native folder browser — the user picks a folder on their device, e.g. a photo album, and every image directly inside it is imported at once):
+   POST /sets/import
+   POST /sets/import?name=<custom name>   (optional — otherwise the set is named after the picked folder)
+   No request body. Response JSON: { "name": "...", "files": [ { "name": "...", "url": "/sets/<name>/<file>" }, ... ] }
+   or { "cancelled": true } if the user backed out of the picker,
+   or { "error": "..." } if the folder had no images or couldn't be read (some Android folders like Downloads are protected).
+
+6. List saved sets:
+   GET /sets
+   Response JSON: { "sets": [ { "name": "...", "count": <n> }, ... ] }
+
+7. List files in one set:
+   GET /sets/<name>
+   Response JSON: { "files": [ { "name": "...", "url": "/sets/<name>/<file>" }, ... ] }
+   Reference an image directly, e.g. <img src="/sets/<name>/<file>">
+
+8. Delete a whole set:
+   DELETE /sets/<name>
+
 Rules:
 - Everything above is private to this one app — there is no way to read or write another app's data or files, and no auth is needed since it's already sandboxed per-app.
-- Do NOT use IndexedDB, cookies, sessionStorage, or any other storage API — only localStorage and the /uploads endpoints above actually persist.
+- Do NOT use IndexedDB, cookies, sessionStorage, or any other storage API — only localStorage and the /uploads and /sets endpoints above actually persist.
 - Do NOT call any external network APIs or CDNs — the app must work fully offline. Inline everything (CSS/JS) into the HTML, or reference only files you also upload/bundle alongside it.
 ''';
 

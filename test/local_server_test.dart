@@ -76,4 +76,63 @@ void main() {
     expect(fetchRes.statusCode, 404);
     client.close(force: true);
   });
+
+  test('lists no sets when none exist', () async {
+    final client = HttpClient();
+    final res = await (await client.getUrl(url('/sets'))).close();
+    final body = jsonDecode(await res.transform(utf8.decoder).join());
+    expect(body['sets'], isEmpty);
+    client.close(force: true);
+  });
+
+  test('lists, serves, and deletes a manually-populated set', () async {
+    // Bypasses the actual native folder picker (untestable off-device) and
+    // exercises everything downstream of it directly, the same way
+    // _handleImportSet itself would populate the folder.
+    final setDir = Directory('${appDir.path}/sets/Sunsets')..createSync(recursive: true);
+    File('${setDir.path}/a.jpg').writeAsStringSync('fake-jpg-bytes');
+    File('${setDir.path}/b.png').writeAsStringSync('fake-png-bytes');
+
+    final client = HttpClient();
+
+    final listSetsRes = await (await client.getUrl(url('/sets'))).close();
+    final listSetsBody = jsonDecode(await listSetsRes.transform(utf8.decoder).join());
+    expect(listSetsBody['sets'], [
+      {'name': 'Sunsets', 'count': 2},
+    ]);
+
+    final listFilesRes = await (await client.getUrl(url('/sets/Sunsets'))).close();
+    final listFilesBody = jsonDecode(await listFilesRes.transform(utf8.decoder).join());
+    expect(listFilesBody['files'], [
+      {'name': 'a.jpg', 'url': '/sets/Sunsets/a.jpg'},
+      {'name': 'b.png', 'url': '/sets/Sunsets/b.png'},
+    ]);
+
+    final fetchRes = await (await client.getUrl(url('/sets/Sunsets/a.jpg'))).close();
+    expect(fetchRes.statusCode, 200);
+    expect(await fetchRes.transform(utf8.decoder).join(), 'fake-jpg-bytes');
+
+    final delRes = await (await client.deleteUrl(url('/sets/Sunsets'))).close();
+    expect(delRes.statusCode, 200);
+
+    final afterDeleteRes = await (await client.getUrl(url('/sets'))).close();
+    final afterDeleteBody = jsonDecode(await afterDeleteRes.transform(utf8.decoder).join());
+    expect(afterDeleteBody['sets'], isEmpty);
+
+    client.close(force: true);
+  });
+
+  test('rejects path traversal in a set name', () async {
+    final client = HttpClient();
+    // Verified empirically (not assumed) that dart:io's HttpServer leaves
+    // %2F un-decoded in request.uri.path — so this arrives as one opaque
+    // path segment, matches the /sets/<name> route, and only gets decoded
+    // (and rejected) once _sanitizeFilename runs Uri.decodeComponent on it.
+    // A literal ".." or %2e%2e-encoded dots, by contrast, get normalized
+    // away by the HTTP stack before the request handler ever sees them —
+    // verified that too, and it's *not* a traversal risk as a result.
+    final res = await (await client.getUrl(url('/sets/..%2F..%2Fescaped'))).close();
+    expect(res.statusCode, 400);
+    client.close(force: true);
+  });
 }

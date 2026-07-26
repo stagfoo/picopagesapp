@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:hive/hive.dart';
 
 /// Serves one imported HTML app's folder over http://127.0.0.1 so relative
@@ -59,6 +60,23 @@ class LocalAppServer {
         await _handleUploadsRequest(request);
         return;
       }
+      if (path == '/sets' && request.method == 'GET') {
+        await _handleListSets(request);
+        return;
+      }
+      if (path == '/sets/import' && request.method == 'POST') {
+        await _handleImportSet(request);
+        return;
+      }
+      if (request.method == 'GET' || request.method == 'DELETE') {
+        final setMatch = RegExp(r'^/sets/([^/]+)$').firstMatch(path);
+        if (setMatch != null) {
+          await _handleSetRequest(request, setMatch.group(1)!);
+          return;
+        }
+      }
+      // Falls through to here for GET /sets/<name>/<file> — an actual set
+      // image, served the same as any other file under rootDir.
       await _handleStaticFile(request);
     } catch (e) {
       request.response.statusCode = HttpStatus.internalServerError;
@@ -177,6 +195,144 @@ class LocalAppServer {
     final file = File('${_uploadsDir.path}/$safeName');
     if (await file.exists()) await file.delete();
     request.response.write(jsonEncode({'ok': true}));
+    await request.response.close();
+  }
+
+  Directory get _setsDir => Directory('${rootDir.path}/sets');
+
+  static const _imageExtensions = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'};
+
+  String _extOf(String path) {
+    final dot = path.lastIndexOf('.');
+    return dot == -1 ? '' : path.substring(dot).toLowerCase();
+  }
+
+  String _basenameOf(String path) {
+    final normalized = path.endsWith('/') ? path.substring(0, path.length - 1) : path;
+    final slash = normalized.lastIndexOf('/');
+    return slash == -1 ? normalized : normalized.substring(slash + 1);
+  }
+
+  Future<void> _handleListSets(HttpRequest request) async {
+    request.response.headers.set('Access-Control-Allow-Origin', '*');
+    request.response.headers.contentType = ContentType.json;
+    if (!await _setsDir.exists()) {
+      request.response.write(jsonEncode({'sets': []}));
+      await request.response.close();
+      return;
+    }
+    final sets = <Map<String, dynamic>>[];
+    await for (final entity in _setsDir.list()) {
+      if (entity is Directory) {
+        final count = await entity.list().where((e) => e is File).length;
+        sets.add({'name': _basenameOf(entity.path), 'count': count});
+      }
+    }
+    sets.sort((a, b) => (a['name'] as String).compareTo(b['name'] as String));
+    request.response.write(jsonEncode({'sets': sets}));
+    await request.response.close();
+  }
+
+  /// Triggers Android's real native folder browser (Storage Access
+  /// Framework) via file_picker, imports every image file found directly
+  /// inside the picked folder (not recursively) into a named set, and
+  /// serves them back at `/sets/<name>/<file>`. The set name defaults to
+  /// the picked folder's own name, or can be overridden with `?name=`.
+  Future<void> _handleImportSet(HttpRequest request) async {
+    request.response.headers.set('Access-Control-Allow-Origin', '*');
+    request.response.headers.contentType = ContentType.json;
+
+    final requestedName = request.uri.queryParameters['name'];
+    if (requestedName != null && _sanitizeFilename(requestedName) == null) {
+      request.response.statusCode = HttpStatus.badRequest;
+      request.response.write(jsonEncode({'error': 'invalid name'}));
+      await request.response.close();
+      return;
+    }
+
+    final pickedPath = await FilePicker.platform.getDirectoryPath();
+    if (pickedPath == null || pickedPath == '/') {
+      // file_picker returns null if the user cancelled, or "/" for some
+      // protected Android locations (e.g. Downloads) it can't resolve a
+      // real path for — both look the same to the app, so both get treated
+      // as "nothing usable was picked" rather than trying to read from "/".
+      request.response.write(jsonEncode({'cancelled': true}));
+      await request.response.close();
+      return;
+    }
+
+    List<File> imageFiles;
+    try {
+      final sourceDir = Directory(pickedPath);
+      imageFiles = await sourceDir
+          .list()
+          .where((e) => e is File && _imageExtensions.contains(_extOf(e.path)))
+          .cast<File>()
+          .toList();
+    } catch (e) {
+      request.response.statusCode = HttpStatus.internalServerError;
+      request.response.write(jsonEncode({
+        'error': 'could not read that folder ($e) — some Android folders (like Downloads) '
+            'are protected; try a folder under Pictures or one you created yourself',
+      }));
+      await request.response.close();
+      return;
+    }
+
+    if (imageFiles.isEmpty) {
+      request.response.statusCode = HttpStatus.badRequest;
+      request.response.write(jsonEncode({'error': 'no image files found in that folder'}));
+      await request.response.close();
+      return;
+    }
+
+    final setName = _sanitizeFilename(requestedName ?? _basenameOf(pickedPath)) ?? 'set';
+    final destDir = Directory('${_setsDir.path}/$setName');
+    await destDir.create(recursive: true);
+
+    final imported = <Map<String, String>>[];
+    for (final file in imageFiles) {
+      final name = file.uri.pathSegments.last;
+      await file.copy('${destDir.path}/$name');
+      imported.add({'name': name, 'url': '/sets/$setName/$name'});
+    }
+
+    request.response.write(jsonEncode({'name': setName, 'files': imported}));
+    await request.response.close();
+  }
+
+  Future<void> _handleSetRequest(HttpRequest request, String rawName) async {
+    request.response.headers.set('Access-Control-Allow-Origin', '*');
+    request.response.headers.contentType = ContentType.json;
+
+    final name = _sanitizeFilename(rawName);
+    if (name == null) {
+      request.response.statusCode = HttpStatus.badRequest;
+      request.response.write(jsonEncode({'error': 'invalid name'}));
+      await request.response.close();
+      return;
+    }
+    final dir = Directory('${_setsDir.path}/$name');
+
+    if (request.method == 'DELETE') {
+      if (await dir.exists()) await dir.delete(recursive: true);
+      request.response.write(jsonEncode({'ok': true}));
+      await request.response.close();
+      return;
+    }
+
+    // GET: list files in the set.
+    if (!await dir.exists()) {
+      request.response.statusCode = HttpStatus.notFound;
+      request.response.write(jsonEncode({'error': 'no such set'}));
+      await request.response.close();
+      return;
+    }
+    final names = await dir.list().where((e) => e is File).map((e) => _basenameOf(e.path)).toList();
+    names.sort();
+    request.response.write(jsonEncode({
+      'files': [for (final n in names) {'name': n, 'url': '/sets/$name/$n'}],
+    }));
     await request.response.close();
   }
 

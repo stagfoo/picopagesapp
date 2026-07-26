@@ -567,7 +567,7 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icons.storage_outlined,
               tooltip: 'View stored data',
               onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => DataViewerScreen(apps: widget.repository.listApps()),
+                builder: (_) => DataViewerScreen(repository: widget.repository),
               )),
             ),
             _dockIconButton(
