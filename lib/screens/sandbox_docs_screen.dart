@@ -44,6 +44,23 @@ This app will run inside a sandboxed local web server on a phone (no internet, n
 8. Delete a whole set:
    DELETE /sets/<name>
 
+9. Share text and/or a file (opens Android's native share sheet):
+   POST /share
+   Body JSON: { "text": "...", "url": "/uploads/<name>" }   (both optional, at least one required; `url` must be a URL this server already gave you back from /uploads or /sets)
+   Response JSON: { "status": "success" | "dismissed" | "unavailable" }
+
+10. Speak text aloud with on-device text-to-speech (no network, no external API):
+   POST /speak
+   Body JSON: { "text": "...", "language": "ja-JP" }   (language optional)
+   Response JSON: { "ok": true }
+
+11. Stop any speech in progress:
+   POST /speak/stop
+
+12. List available TTS language codes (so you can check one exists before offering it, e.g. as a picker):
+   GET /speak/languages
+   Response JSON: { "languages": [ "en-US", "ja-JP", ... ] }
+
 Rules:
 - Everything above is private to this one app — there is no way to read or write another app's data or files, and no auth is needed since it's already sandboxed per-app.
 - Do NOT use IndexedDB, cookies, sessionStorage, or any other storage API — only localStorage and the /uploads and /sets endpoints above actually persist.

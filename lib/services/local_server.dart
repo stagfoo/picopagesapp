@@ -3,7 +3,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:hive/hive.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// Serves one imported HTML app's folder over http://127.0.0.1 so relative
 /// links (css/js/images) resolve normally, and gives every app its own
@@ -28,6 +30,7 @@ class LocalAppServer {
 
   HttpServer? _server;
   Box? _storageBox;
+  FlutterTts? _tts;
 
   LocalAppServer({required this.appId, required this.rootDir});
 
@@ -43,6 +46,7 @@ class LocalAppServer {
   Future<void> stop() async {
     await _server?.close(force: true);
     await _storageBox?.close();
+    await _tts?.stop();
   }
 
   Future<void> _handleRequest(HttpRequest request) async {
@@ -74,6 +78,22 @@ class LocalAppServer {
           await _handleSetRequest(request, setMatch.group(1)!);
           return;
         }
+      }
+      if (path == '/share' && request.method == 'POST') {
+        await _handleShare(request);
+        return;
+      }
+      if (path == '/speak' && request.method == 'POST') {
+        await _handleSpeak(request);
+        return;
+      }
+      if (path == '/speak/stop' && request.method == 'POST') {
+        await _handleSpeakStop(request);
+        return;
+      }
+      if (path == '/speak/languages' && request.method == 'GET') {
+        await _handleSpeakLanguages(request);
+        return;
       }
       // Falls through to here for GET /sets/<name>/<file> — an actual set
       // image, served the same as any other file under rootDir.
@@ -332,6 +352,109 @@ class LocalAppServer {
     names.sort();
     request.response.write(jsonEncode({
       'files': [for (final n in names) {'name': n, 'url': '/sets/$name/$n'}],
+    }));
+    await request.response.close();
+  }
+
+  /// Resolves a sandbox-relative URL like "/uploads/photo.png" or
+  /// "/sets/Sunsets/a.jpg" to a real file under rootDir. Rejects anything
+  /// containing ".." rather than trying to canonicalize the path — the only
+  /// URLs this is meant to accept are ones the server itself just handed
+  /// back to the app (from /uploads or /sets responses), so a plain
+  /// substring check is enough to close off a JS-supplied path escaping
+  /// this app's own folder.
+  File? _resolveSandboxUrl(String url) {
+    if (!url.startsWith('/') || url.contains('..')) return null;
+    return File('${rootDir.path}$url');
+  }
+
+  Future<void> _handleShare(HttpRequest request) async {
+    request.response.headers.set('Access-Control-Allow-Origin', '*');
+    request.response.headers.contentType = ContentType.json;
+
+    Map<String, dynamic> body;
+    try {
+      body = jsonDecode(await utf8.decodeStream(request)) as Map<String, dynamic>;
+    } catch (e) {
+      request.response.statusCode = HttpStatus.badRequest;
+      request.response.write(jsonEncode({'error': 'invalid JSON body'}));
+      await request.response.close();
+      return;
+    }
+
+    final text = body['text'] as String?;
+    final fileUrl = body['url'] as String?;
+    if ((text == null || text.isEmpty) && fileUrl == null) {
+      request.response.statusCode = HttpStatus.badRequest;
+      request.response.write(jsonEncode({'error': "provide 'text' and/or 'url'"}));
+      await request.response.close();
+      return;
+    }
+
+    List<XFile>? files;
+    if (fileUrl != null) {
+      final file = _resolveSandboxUrl(fileUrl);
+      if (file == null || !await file.exists()) {
+        request.response.statusCode = HttpStatus.badRequest;
+        request.response.write(jsonEncode({'error': 'no such file: $fileUrl'}));
+        await request.response.close();
+        return;
+      }
+      files = [XFile(file.path)];
+    }
+
+    final result = await SharePlus.instance.share(ShareParams(text: text, files: files));
+    request.response.write(jsonEncode({'status': result.status.name}));
+    await request.response.close();
+  }
+
+  FlutterTts get _ttsInstance => _tts ??= FlutterTts();
+
+  Future<void> _handleSpeak(HttpRequest request) async {
+    request.response.headers.set('Access-Control-Allow-Origin', '*');
+    request.response.headers.contentType = ContentType.json;
+
+    Map<String, dynamic> body;
+    try {
+      body = jsonDecode(await utf8.decodeStream(request)) as Map<String, dynamic>;
+    } catch (e) {
+      request.response.statusCode = HttpStatus.badRequest;
+      request.response.write(jsonEncode({'error': 'invalid JSON body'}));
+      await request.response.close();
+      return;
+    }
+
+    final text = body['text'] as String?;
+    if (text == null || text.isEmpty) {
+      request.response.statusCode = HttpStatus.badRequest;
+      request.response.write(jsonEncode({'error': "'text' is required"}));
+      await request.response.close();
+      return;
+    }
+
+    final language = body['language'] as String?;
+    if (language != null) {
+      await _ttsInstance.setLanguage(language);
+    }
+    await _ttsInstance.speak(text);
+    request.response.write(jsonEncode({'ok': true}));
+    await request.response.close();
+  }
+
+  Future<void> _handleSpeakStop(HttpRequest request) async {
+    request.response.headers.set('Access-Control-Allow-Origin', '*');
+    request.response.headers.contentType = ContentType.json;
+    await _ttsInstance.stop();
+    request.response.write(jsonEncode({'ok': true}));
+    await request.response.close();
+  }
+
+  Future<void> _handleSpeakLanguages(HttpRequest request) async {
+    request.response.headers.set('Access-Control-Allow-Origin', '*');
+    request.response.headers.contentType = ContentType.json;
+    final languages = await _ttsInstance.getLanguages;
+    request.response.write(jsonEncode({
+      'languages': (languages as List).map((l) => l.toString()).toList(),
     }));
     await request.response.close();
   }

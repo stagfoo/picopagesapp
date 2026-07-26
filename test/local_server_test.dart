@@ -135,4 +135,45 @@ void main() {
     expect(res.statusCode, 400);
     client.close(force: true);
   });
+
+  // The remaining /share and /speak tests only cover validation that
+  // returns before touching the actual platform plugin (SharePlus/
+  // FlutterTts) — those plugins need a real device/platform channel and
+  // aren't invokable from a plain `flutter test` VM run.
+
+  test('rejects /share with neither text nor url', () async {
+    final client = HttpClient();
+    final req = await client.postUrl(url('/share'));
+    req.write('{}');
+    final res = await req.close();
+    expect(res.statusCode, 400);
+    client.close(force: true);
+  });
+
+  test('rejects /share with a url that does not exist', () async {
+    final client = HttpClient();
+    final req = await client.postUrl(url('/share'));
+    req.write(jsonEncode({'url': '/uploads/nonexistent.png'}));
+    final res = await req.close();
+    expect(res.statusCode, 400);
+    client.close(force: true);
+  });
+
+  test('rejects /share with a path-traversal url', () async {
+    final client = HttpClient();
+    final req = await client.postUrl(url('/share'));
+    req.write(jsonEncode({'url': '/uploads/../../escaped.png'}));
+    final res = await req.close();
+    expect(res.statusCode, 400);
+    client.close(force: true);
+  });
+
+  test('rejects /speak with no text', () async {
+    final client = HttpClient();
+    final req = await client.postUrl(url('/speak'));
+    req.write('{}');
+    final res = await req.close();
+    expect(res.statusCode, 400);
+    client.close(force: true);
+  });
 }
