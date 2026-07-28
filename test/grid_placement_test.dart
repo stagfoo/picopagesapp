@@ -58,7 +58,7 @@ void main() {
   });
 
   group('moveByDelta', () {
-    test('moves into an empty cell with no collision', () {
+    test('moves into an empty cell directly', () {
       final placement = const GridPlacement(crossAxisCount: 4);
       final item = _item('a', row: 2, col: 2);
       final items = [item];
@@ -69,43 +69,54 @@ void main() {
       expect((item.row, item.col), (2, 3));
     });
 
-    test('swaps with exactly one blocking item', () {
+    test('jumps past a single occupied cell to the next free one', () {
       final placement = const GridPlacement(crossAxisCount: 4);
       final a = _item('a', row: 0, col: 0);
-      final b = _item('b', row: 0, col: 1);
-      final items = [a, b];
+      final blocker = _item('blocker', row: 0, col: 1);
+      final items = [a, blocker];
 
       final moved = placement.moveByDelta(items, a, 0, 1);
 
-      expect(moved.toSet(), {a, b});
-      expect((a.row, a.col), (0, 1));
-      expect((b.row, b.col), (0, 0));
+      // Jumps straight to (0, 2), the first free cell — blocker is left
+      // exactly where it was, not swapped.
+      expect(moved, [a]);
+      expect((a.row, a.col), (0, 2));
+      expect((blocker.row, blocker.col), (0, 1));
     });
 
-    test('a large tile can safely displace a same-position small tile', () {
+    test('jumps past several consecutive occupied rows to the next free one', () {
       final placement = const GridPlacement(crossAxisCount: 4);
-      final wide = _item('wide', row: 0, col: 0, colSpan: 2);
-      final small = _item('small', row: 0, col: 1);
-      final items = [wide, small];
+      final a = _item('a', row: 0, col: 0);
+      final blockers = [
+        _item('b1', row: 1, col: 0),
+        _item('b2', row: 2, col: 0),
+        _item('b3', row: 3, col: 0),
+      ];
+      final items = [a, ...blockers];
 
-      final moved = placement.moveByDelta(items, wide, 0, 1);
+      final moved = placement.moveByDelta(items, a, 1, 0);
 
-      expect(moved.toSet(), {wide, small});
-      expect((wide.row, wide.col), (0, 1));
-      expect((small.row, small.col), (0, 0));
+      // Rows 1-3 are all occupied; row 4 is the first free one.
+      expect(moved, [a]);
+      expect((a.row, a.col), (4, 0));
+      for (final b in blockers) {
+        expect(b.row, lessThan(4));
+      }
     });
 
-    test('is blocked when a small tile would displace a differently-sized tile', () {
+    test('jumps past a differently-sized blocking tile', () {
       final placement = const GridPlacement(crossAxisCount: 4);
-      // wide occupies (0,1) and (0,2); small tries to swipe right into (0,1).
+      // wide occupies (0,1) and (0,2); small tries to move right into it.
       final wide = _item('wide', row: 0, col: 1, colSpan: 2);
       final small = _item('small', row: 0, col: 0);
       final items = [wide, small];
 
       final moved = placement.moveByDelta(items, small, 0, 1);
 
-      expect(moved, isEmpty);
-      expect((small.row, small.col), (0, 0));
+      // (0,1) and (0,2) are both occupied by wide; (0,3) is the first free
+      // cell — small jumps there rather than being blocked by wide's size.
+      expect(moved, [small]);
+      expect((small.row, small.col), (0, 3));
       expect((wide.row, wide.col), (0, 1));
     });
 
@@ -131,6 +142,20 @@ void main() {
       expect((a.row, a.col), (0, 3));
     });
 
+    test('is blocked moving right when no free cell exists before the edge', () {
+      final placement = const GridPlacement(crossAxisCount: 4);
+      final a = _item('a', row: 0, col: 0);
+      final blockerB = _item('blockerB', row: 0, col: 1);
+      final blockerC = _item('blockerC', row: 0, col: 2);
+      final blockerD = _item('blockerD', row: 0, col: 3);
+      final items = [a, blockerB, blockerC, blockerD];
+
+      final moved = placement.moveByDelta(items, a, 0, 1);
+
+      expect(moved, isEmpty);
+      expect((a.row, a.col), (0, 0));
+    });
+
     test('has no vertical limit moving down', () {
       final placement = const GridPlacement(crossAxisCount: 4);
       final a = _item('a', row: 40, col: 0);
@@ -140,19 +165,6 @@ void main() {
 
       expect(moved, [a]);
       expect((a.row, a.col), (41, 0));
-    });
-
-    test('is blocked when the destination is occupied by more than one item', () {
-      final placement = const GridPlacement(crossAxisCount: 4);
-      final wide = _item('wide', row: 0, col: 0, colSpan: 2);
-      final blockerA = _item('blockerA', row: 0, col: 1);
-      final blockerB = _item('blockerB', row: 0, col: 2);
-      final items = [wide, blockerA, blockerB];
-
-      final moved = placement.moveByDelta(items, wide, 0, 1);
-
-      expect(moved, isEmpty);
-      expect((wide.row, wide.col), (0, 0));
     });
   });
 

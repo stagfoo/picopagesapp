@@ -1,8 +1,8 @@
 import '../models/grid_item.dart';
 
 /// Grid coordinate math for the home screen: assigning first-fit positions
-/// to newly-created (or pre-migration) items, and moving an item by one
-/// cell at a time with swap-on-collision semantics.
+/// to newly-created (or pre-migration) items, and moving an item in a
+/// direction by jumping straight to the nearest free spot that way.
 ///
 /// Positions are absolute (row, col) — unlike a flow/packing layout, moving
 /// an item away from a spot leaves it empty rather than reflowing everything
@@ -80,55 +80,37 @@ class GridPlacement {
     return placed;
   }
 
-  /// Moves [item] by one cell in the given direction. If the destination is
-  /// occupied by exactly one other item, they swap — but only if the
-  /// blocking item's span fits within [item]'s old footprint (anchored at
-  /// the same top-left corner). That's the exact safety condition: [item]'s
-  /// old spot is guaranteed free of anything else, so anything no bigger
-  /// than it fits there without touching a third tile. A same-size swap
-  /// always qualifies; a *smaller* tile swapping into a *larger* tile's
-  /// spot also works (it just doesn't fill all of it). The other direction
-  /// — a small tile trying to displace a larger one — doesn't fit and is
-  /// blocked, since the larger tile would spill outside the small tile's
-  /// one-cell footprint and overlap whatever's next to it. Also blocked:
-  /// more than one tile in the way, or the destination running off the
-  /// grid horizontally. There's no vertical limit — moving down always
-  /// succeeds.
+  /// Moves [item] in the given direction (dRow/dCol is a unit step — one of
+  /// up/down/left/right), scanning cell by cell past anything in the way
+  /// until it finds the nearest free spot [item]'s own footprint actually
+  /// fits in, and jumps straight there. This deliberately isn't a swap or a
+  /// single-cell nudge: a tile boxed in on one side shouldn't require
+  /// relocating everything around it first just to move past it. Blocked
+  /// (returns empty, nothing mutated) only if the scan runs off the grid —
+  /// horizontally bounded by crossAxisCount, upward bounded by row 0 — before
+  /// finding a free spot. Moving down has no bound: the grid grows as far as
+  /// items are placed, so a free spot always exists eventually.
   ///
-  /// Returns the set of items that were mutated (empty if blocked).
+  /// Returns the set of items that were mutated (just [item] — empty if
+  /// blocked).
   List<GridItem> moveByDelta(List<GridItem> items, GridItem item, int dRow, int dCol) {
-    final newRow = item.row + dRow;
-    final newCol = item.col + dCol;
-    if (newRow < 0 || newCol < 0 || newCol + item.colSpan > crossAxisCount) return const [];
-
-    final destination = cellsFor(newRow, newCol, item.colSpan, item.rowSpan);
-    final blocking = <GridItem>{};
+    final occupied = <(int, int)>{};
     for (final other in items) {
       if (other.id == item.id) continue;
-      final otherCells = cellsFor(other.row, other.col, other.colSpan, other.rowSpan);
-      if (destination.any(otherCells.contains)) blocking.add(other);
+      occupied.addAll(cellsFor(other.row, other.col, other.colSpan, other.rowSpan));
     }
 
-    if (blocking.isEmpty) {
-      item.row = newRow;
-      item.col = newCol;
-      return [item];
+    var row = item.row;
+    var col = item.col;
+    while (true) {
+      row += dRow;
+      col += dCol;
+      if (row < 0 || col < 0 || col + item.colSpan > crossAxisCount) return const [];
+      if (_fits(occupied, row, col, item.colSpan, item.rowSpan)) {
+        item.row = row;
+        item.col = col;
+        return [item];
+      }
     }
-
-    if (blocking.length == 1) {
-      final swapWith = blocking.first;
-      final fitsInVacatedSpot = swapWith.colSpan <= item.colSpan && swapWith.rowSpan <= item.rowSpan;
-      if (!fitsInVacatedSpot) return const [];
-
-      final oldRow = item.row;
-      final oldCol = item.col;
-      item.row = newRow;
-      item.col = newCol;
-      swapWith.row = oldRow;
-      swapWith.col = oldCol;
-      return [item, swapWith];
-    }
-
-    return const [];
   }
 }

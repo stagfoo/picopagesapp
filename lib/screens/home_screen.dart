@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -40,12 +41,21 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _updatingFiles = false;
   bool _organizing = false;
   String? _selectedId;
+  final ScrollController _scrollController = ScrollController();
+  Timer? _scrollNudgeTimer;
 
   @override
   void initState() {
     super.initState();
     _importService = ImportService(widget.repository);
     _items = widget.repository.listGridItems();
+  }
+
+  @override
+  void dispose() {
+    _scrollNudgeTimer?.cancel();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   void _refresh() {
@@ -498,41 +508,125 @@ class _HomeScreenState extends State<HomeScreen> {
           final contentHeight = maxRow * rowStep - _mainAxisSpacing;
           final gridHeight = math.max(contentHeight, constraints.maxHeight);
 
-          return SingleChildScrollView(
-            child: SizedBox(
-              width: constraints.maxWidth,
-              height: gridHeight,
-              child: Stack(
-                children: [
-                  if (_organizing)
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: CustomPaint(
-                          painter: _OrganizeGridPainter(
-                            crossAxisCount: _crossAxisCount,
-                            cellExtent: cellExtent,
-                            crossAxisSpacing: _crossAxisSpacing,
-                            mainAxisSpacing: _mainAxisSpacing,
+          return Stack(
+            children: [
+              SingleChildScrollView(
+                controller: _scrollController,
+                // A selected tile's swipe-to-move gesture and this view's
+                // own drag-to-scroll both want vertical drags, so while
+                // organizing the scroll view steps aside entirely — the
+                // arrow buttons below are the only way to scroll then.
+                physics: _organizing
+                    ? const NeverScrollableScrollPhysics()
+                    : const AlwaysScrollableScrollPhysics(),
+                child: SizedBox(
+                  width: constraints.maxWidth,
+                  height: gridHeight,
+                  child: Stack(
+                    children: [
+                      if (_organizing)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              painter: _OrganizeGridPainter(
+                                crossAxisCount: _crossAxisCount,
+                                cellExtent: cellExtent,
+                                crossAxisSpacing: _crossAxisSpacing,
+                                mainAxisSpacing: _mainAxisSpacing,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                  for (final item in _items)
-                    AnimatedPositioned(
-                      key: ValueKey(item.id),
-                      duration: const Duration(milliseconds: 220),
-                      curve: Curves.easeOut,
-                      left: item.col * colStep,
-                      top: item.row * rowStep,
-                      width: item.colSpan * cellExtent + (item.colSpan - 1) * _crossAxisSpacing,
-                      height: item.rowSpan * cellExtent + (item.rowSpan - 1) * _mainAxisSpacing,
-                      child: _buildTile(item),
-                    ),
-                ],
+                      for (final item in _items)
+                        AnimatedPositioned(
+                          key: ValueKey(item.id),
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOut,
+                          left: item.col * colStep,
+                          top: item.row * rowStep,
+                          width: item.colSpan * cellExtent + (item.colSpan - 1) * _crossAxisSpacing,
+                          height: item.rowSpan * cellExtent + (item.rowSpan - 1) * _mainAxisSpacing,
+                          child: _buildTile(item),
+                        ),
+                    ],
+                  ),
+                ),
               ),
-            ),
+              if (_organizing)
+                Positioned(
+                  right: 6,
+                  bottom: 6,
+                  child: _buildScrollNudgeButtons(rowStep),
+                ),
+            ],
           );
         },
+      ),
+    );
+  }
+
+  void _nudgeScroll(double delta) {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final target = (_scrollController.offset + delta).clamp(position.minScrollExtent, position.maxScrollExtent);
+    _scrollController.animateTo(target, duration: const Duration(milliseconds: 150), curve: Curves.easeOut);
+  }
+
+  void _startContinuousScroll(double perTickDelta) {
+    _scrollNudgeTimer?.cancel();
+    _scrollNudgeTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+      if (!_scrollController.hasClients) return;
+      final position = _scrollController.position;
+      final next = (_scrollController.offset + perTickDelta).clamp(position.minScrollExtent, position.maxScrollExtent);
+      _scrollController.jumpTo(next);
+    });
+  }
+
+  void _stopContinuousScroll() {
+    _scrollNudgeTimer?.cancel();
+    _scrollNudgeTimer = null;
+  }
+
+  Widget _buildScrollNudgeButtons(double rowStep) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _scrollNudgeButton(
+          icon: Icons.keyboard_arrow_up,
+          onTap: () => _nudgeScroll(-rowStep),
+          onHoldStart: () => _startContinuousScroll(-14),
+          onHoldEnd: _stopContinuousScroll,
+        ),
+        const SizedBox(height: 8),
+        _scrollNudgeButton(
+          icon: Icons.keyboard_arrow_down,
+          onTap: () => _nudgeScroll(rowStep),
+          onHoldStart: () => _startContinuousScroll(14),
+          onHoldEnd: _stopContinuousScroll,
+        ),
+      ],
+    );
+  }
+
+  Widget _scrollNudgeButton({
+    required IconData icon,
+    required VoidCallback onTap,
+    required VoidCallback onHoldStart,
+    required VoidCallback onHoldEnd,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      onLongPressStart: (_) => onHoldStart(),
+      onLongPressEnd: (_) => onHoldEnd(),
+      onLongPressCancel: onHoldEnd,
+      child: Material(
+        color: Colors.white.withValues(alpha: 0.85),
+        shape: const CircleBorder(),
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Icon(icon, size: 22, color: const Color(0xFF8E6FE0)),
+        ),
       ),
     );
   }
