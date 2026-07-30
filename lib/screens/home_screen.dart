@@ -62,16 +62,26 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _items = widget.repository.listGridItems());
   }
 
+  /// Floats above the dock instead of the default fixed-to-bottom behavior,
+  /// which otherwise renders right on top of it — the dock isn't Scaffold's
+  /// bottomNavigationBar (it's just the last child in the body Column, so it
+  /// keeps the pink-bloom background behind it), so Scaffold has no idea it
+  /// needs to leave room for a snackbar above it.
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      behavior: SnackBarBehavior.floating,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+    ));
+  }
+
   Future<void> _addApp() async {
     setState(() => _importing = true);
     try {
       final entry = await _importService.importFromPicker();
       if (entry != null) _refresh();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Import failed: $e')));
-      }
+      if (mounted) _showSnack('Import failed: $e');
     } finally {
       if (mounted) setState(() => _importing = false);
     }
@@ -155,9 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showResizeBlockedHint() {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Not enough room — move the tile(s) in the way first'),
-    ));
+    _showSnack('Not enough room — move the tile(s) in the way first');
   }
 
   Future<void> _persist(GridItem item) async {
@@ -247,12 +255,10 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final updated = await _importService.updateAppFiles(entry);
       if (mounted && updated) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('App files updated')));
+        _showSnack('App files updated');
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Update failed: $e')));
-      }
+      if (mounted) _showSnack('Update failed: $e');
     } finally {
       if (mounted) setState(() => _updatingFiles = false);
     }
