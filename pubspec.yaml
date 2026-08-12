@@ -39,7 +39,11 @@ dependencies:
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   path_provider: ^2.1.4
-  file_picker: ^8.1.4
+  # Pinned, not ^-ranged: 11.0.0-11.0.3 regressed their Android build (omits
+  # the Kotlin Android plugin, breaking under AGP 9 — "cannot find symbol
+  # FilePickerPlugin" at compile time). 10.3.10 is the confirmed-working
+  # version per https://github.com/miguelpruivo/flutter_file_picker/issues/1973.
+  file_picker: 10.3.10
   archive: ^3.6.1
   uuid: ^4.5.1
   image_picker: ^1.1.2
