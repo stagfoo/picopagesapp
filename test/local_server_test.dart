@@ -28,6 +28,58 @@ void main() {
 
   Uri url(String path) => Uri.parse('http://127.0.0.1:$port$path');
 
+  Future<String> fetchHtml(String path, String html) async {
+    File('${appDir.path}$path').writeAsStringSync(html);
+    final client = HttpClient();
+    final res = await (await client.getUrl(url(path))).close();
+    final body = await res.transform(utf8.decoder).join();
+    client.close();
+    return body;
+  }
+
+  group('viewport injection', () {
+    test('adds a viewport meta tag to a page that declares none', () async {
+      final body = await fetchHtml('/index.html',
+          '<html><head><title>x</title></head><body>hi</body></html>');
+      expect(body,
+          contains('<meta name="viewport" content="width=device-width, initial-scale=1">'));
+    });
+
+    test('leaves a page that sets its own viewport alone', () async {
+      // An app that deliberately picks a fixed viewport must keep it —
+      // overriding it would silently break a layout that was working.
+      final body = await fetchHtml('/own.html',
+          '<html><head><meta name="viewport" content="width=320"></head><body>hi</body></html>');
+      expect(body, contains('content="width=320"'));
+      expect('viewport'.allMatches(body).length, 1);
+    });
+
+    test('recognises an existing tag whatever its quoting and order', () async {
+      final body = await fetchHtml('/odd.html',
+          "<html><head><meta content='width=400' NAME=viewport></head><body>hi</body></html>");
+      expect(body, isNot(contains('width=device-width')));
+    });
+
+    test('injects into a page with no head at all', () async {
+      final body = await fetchHtml('/bare.html', '<body>hi</body>');
+      expect(body, contains('width=device-width'));
+      expect(body, contains('<script>'));
+    });
+
+    test('the tag lands inside head, ahead of the closing tag', () async {
+      final body = await fetchHtml('/ordered.html',
+          '<html><head><title>x</title></head><body>hi</body></html>');
+      expect(body.indexOf('width=device-width'), lessThan(body.indexOf('</head>')));
+    });
+
+    test('still injects the localStorage shim alongside it', () async {
+      final body = await fetchHtml('/shim.html',
+          '<html><head></head><body>hi</body></html>');
+      expect(body, contains('width=device-width'));
+      expect(body, contains('localStorage'));
+    });
+  });
+
   test('uploads a file and can list and fetch it back', () async {
     final client = HttpClient();
     final postReq = await client.postUrl(url('/uploads?filename=photo.png'));

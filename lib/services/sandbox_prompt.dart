@@ -1,9 +1,12 @@
+import 'screen_profile.dart';
+
 /// Builds the AI-prompt text describing the sandbox's persistence surface,
 /// tailored to only the capabilities a given app actually needs — no point
 /// pasting the /speak docs into a prompt for an app that'll never call it.
 ///
 /// localStorage is always included (every app can use it); everything else
-/// is opt-in via [SandboxCapability.key].
+/// is opt-in via [SandboxCapability.key]. A [ScreenProfile], when supplied,
+/// is always included too — every app has to fit the screen.
 class SandboxCapability {
   final String key;
   final String label;
@@ -129,7 +132,10 @@ const allSandboxCapabilities = [
 /// keys. localStorage is always section 1; enabled capabilities follow in
 /// [allSandboxCapabilities] order; the closing rules' persistence list only
 /// names the mechanisms actually included.
-String buildSandboxPromptText(Set<String> enabledKeys) {
+///
+/// [screen] is optional so the prompt can still be built without a live
+/// layout to measure — off a device, or in a test.
+String buildSandboxPromptText(Set<String> enabledKeys, {ScreenProfile? screen}) {
   final enabled = allSandboxCapabilities.where((c) => enabledKeys.contains(c.key));
 
   final sections = <String>[
@@ -150,10 +156,12 @@ String buildSandboxPromptText(Set<String> enabledKeys) {
       : '${persistenceMechanisms.sublist(0, persistenceMechanisms.length - 1).join(', ')} '
           'and ${persistenceMechanisms.last}';
 
+  final screenBlock = screen == null ? '' : '\n${screen.promptSection}\n';
+
   return '''This app will run inside a sandboxed local web server on a phone (no internet, no external APIs). Build it using only this persistence surface:
 
 $numbered
-
+$screenBlock
 Rules:
 - Everything above is private to this one app — there is no way to read or write another app's data or files, and no auth is needed since it's already sandboxed per-app.
 - Do NOT use IndexedDB, cookies, sessionStorage, or any other storage API — only $persistenceList actually persist.

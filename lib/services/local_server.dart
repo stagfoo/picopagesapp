@@ -12,7 +12,8 @@ import 'package:share_plus/share_plus.dart';
 /// origin (distinct port) so the WebView's own storage is naturally
 /// partitioned per app.
 ///
-/// On top of that, served HTML pages get a small JS shim injected that
+/// On top of that, served HTML pages get a viewport meta tag (when they
+/// declare none) and a small JS shim injected — the shim
 /// replaces `window.localStorage` with calls back into this server, which
 /// persists into a Hive box on disk. That way app data survives even if
 /// Android evicts the WebView's own storage under pressure.
@@ -483,12 +484,25 @@ class LocalAppServer {
     await request.response.close();
   }
 
+  /// The viewport tag every phone page needs. Android's WebView otherwise
+  /// lays a page out at a notional 980px wide and scales the result down, so
+  /// an app written against the real screen size — which is what the Sandbox
+  /// API prompt tells the AI to do — comes out shrunken and unreadable.
+  /// Injected only when the page declares no viewport of its own, so an app
+  /// that deliberately sets one keeps it.
+  static const _viewportMeta =
+      '<meta name="viewport" content="width=device-width, initial-scale=1">';
+
+  static final _viewportPattern =
+      RegExp(r'''<meta[^>]+name\s*=\s*["']?viewport''', caseSensitive: false);
+
   String _injectShim(String html) {
     final shim = '<script>$_jsShim</script>';
+    final head = _viewportPattern.hasMatch(html) ? shim : '$_viewportMeta$shim';
     if (html.contains('</head>')) {
-      return html.replaceFirst('</head>', '$shim</head>');
+      return html.replaceFirst('</head>', '$head</head>');
     }
-    return shim + html;
+    return head + html;
   }
 
   ContentType _contentTypeFor(String path) {
